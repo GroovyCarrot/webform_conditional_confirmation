@@ -1,0 +1,10 @@
+name = Webform Conditional Confirmation Messages
+description = Provides different confirmation messages depending on the value submitted.
+core = 7.x
+package = Webform
+configure = admin/config/content/webform/confirmation
+
+dependencies[] = webform
+
+files[] = webform_conditional_confirmation.pages.inc
+
