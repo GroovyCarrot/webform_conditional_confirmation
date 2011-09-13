@@ -214,7 +214,7 @@ function webform_conditional_confirmation_get_message(&$node, $submission) {
       $node->webform['confirmation_format'] = $message->confirmation_format;
       $node->webform['redirect_url'] = $message->redirect_url;
     }
-    else {
+    elseif (!empty($node->webform_conditional_confirmation)) {
       $node->webform['redirect_url'] = $node->webform_conditional_confirmation['redirect_url'];
     }
   }
