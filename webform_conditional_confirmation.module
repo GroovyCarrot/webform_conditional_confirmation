@@ -242,16 +242,16 @@ function webform_conditional_confirmation_webform_client_form_submit($form, &$fo
 
   // Don't trigger this if the webform isn't completed, i.e. final step of a
   // multi-step form.
-  if (empty($form_state['save_draft']) && empty($form_state['webform_completed'])) { 
+  if (empty($form_state['save_draft']) && empty($form_state['webform_completed'])) {
     return;
-  } 
+  }
   // If we have no sid, return.
   if (empty($sid)) {
     return;
   }
 
   $submission = webform_get_submission($node->nid, $sid);
-  webform_conditional_confirmation_get_message(&$node, $submission);
+  webform_conditional_confirmation_get_message($node, $submission);
 
   // Strip out empty tags added by WYSIWYG editors if needed.
   $confirmation = strlen(trim(strip_tags($node->webform['confirmation']))) ? $node->webform['confirmation'] : '';
@@ -327,7 +327,7 @@ function webform_conditional_confirmation_display_message($node) {
   $sid = isset($_GET['sid']) ? $_GET['sid'] : NULL;
   $submission = webform_get_submission($node->nid, $sid);
 
-  webform_conditional_confirmation_get_message(&$node, $submission);
+  webform_conditional_confirmation_get_message($node, $submission);
 
   return theme(array('webform_confirmation_' . $node->nid, 'webform_confirmation'), array('node' => $node, 'sid' => $sid));
 }
