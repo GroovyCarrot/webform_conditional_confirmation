@@ -46,28 +46,14 @@ function webform_conditional_confirmation_schema() {
         'length' => 255,
         'not null' => FALSE,
       ),
-      'redirect_url' => array(
-        'description' => 'The URL a user is redirected to after submitting a form.',
-        'type' => 'varchar',
-        'length' => 255,
-        'default' => '<confirmation>',
-      ),
-      'conditional_component' => array(
-        'description' => 'The conditional component.',
-        'type' => 'varchar',
-        'length' => 255,
+      'config' => array(
+        'description' => 'Conditional configuration.',
+        'type' => 'text',
         'not null' => TRUE,
       ),
-      'conditional_operator' => array(
-        'description' => 'The conditional operator.',
-        'type' => 'varchar',
-        'length' => 32,
-        'default' => '=',
-      ),
-      'conditional_values' => array(
-        'description' => 'The conditional values.',
-        'type' => 'varchar',
-        'length' => 255,
+      'conditionals' => array(
+        'description' => 'The conditionals.',
+        'type' => 'text',
         'not null' => TRUE,
       ),
       'conditional_weight' => array(

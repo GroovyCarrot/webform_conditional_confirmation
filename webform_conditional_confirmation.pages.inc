@@ -96,22 +96,25 @@ function theme_webform_conditional_confirmation_list_form($variables) {
 
   // Populate the rows.
   $rows = array();
-  $messages = element_children($form['messages']);
+
   if (!empty($form['messages'])) {
     foreach (element_children($form['messages']) as $msgid) {
       $message = $form['messages'][$msgid];
       $form['messages'][$msgid]['weight']['#attributes']['class'] = array('webform-confirmation-weight');
       $row = array(
         filter_xss($message['name']['#default_value']),
-        //$message->conditional_weight,
         drupal_render($form['messages'][$msgid]['weight']),
         l(t('Edit'), 'node/' . $node->nid . '/webform/confirmation/' . $msgid . '/edit', array('query' => drupal_get_destination())),
         l(t('Delete'), 'node/' . $node->nid . '/webform/confirmation/' . $msgid . '/delete', array('query' => drupal_get_destination())),
       );
-      $rows[] = array('data' => $row, 'class' => array('draggable', 'tabledrag-leaf'));
+
+      $rows[] = array(
+        'data' => $row,
+        'class' => array('draggable', 'tabledrag-leaf'),
+      );
     }
   }
-  
+
   // Format the output.
   $output = '';
   $output .= theme('table', array('header' => $headers, 'rows' => $rows, 'attributes' => array('id' => 'webform-conditional-confirmations')));
@@ -136,17 +139,68 @@ function webform_conditional_confirmation_list_form_submit($form, &$form_state) 
 }
 
 /**
+ * Get the node webform conditional components.
+ *
+ * @param stdClass $node
+ *   Node object.
+ *
+ * @return array
+ *   Array of conditional components.
+ */
+function _webform_conditional_confirmation_get_conditional_components(stdClass $node) {
+  if (!isset($node->webform) || empty($node->webform['components'])) {
+    return array();
+  }
+
+  $conditional_components = array();
+  foreach ($node->webform['components'] as $cid => $test_component) {
+    if (webform_component_feature($test_component['type'], 'conditional')) {
+      $conditional_components[$cid] = $test_component;
+    }
+  }
+
+  return $conditional_components;
+}
+
+/**
+ * Get an options array of operators.
+ *
+ * @return array
+ *   Form API options array.
+ */
+function _webform_conditional_confirmation_conditional_operators_options() {
+  $operators = _webform_conditional_confirmation_conditional_operators();
+  foreach ($operators as $key => &$operator) {
+    $operator = $operator['label'];
+  }
+
+  return $operators;
+}
+
+/**
  * Add/edit conditional confirmation message.
  */
 function webform_conditional_confirmation_edit_confirmation_form($form, &$form_state, $node, $msgid) {
+  form_load_include($form_state, 'inc', 'webform', 'includes/webform.components');
+
+  $form_state['node'] = $node;
+  $form_state['msgid'] = $msgid;
+
   $form['#attached']['library'][] = array('webform', 'admin');
 
   $defaults = webform_conditional_confirmation_message_load($node, $msgid);
+  if (!isset($form_state['conditionals'])) {
+    $form_state['conditionals'] = 0;
+    if ($defaults && !empty($defaults->conditionals)) {
+      $form_state['conditionals'] = count($defaults->conditionals) - 1;
+    }
+  }
 
   $form['nid'] = array(
     '#type' => 'value',
     '#value' => $node->nid,
   );
+
   $form['msgid'] = array(
     '#type' => 'value',
     '#value' => $msgid == 'add' ? NULL : $msgid,
@@ -158,67 +212,50 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
     '#description' => t('Internal name assigned to this confirmation message. Used on administration screens only.'),
     '#default_value' => $defaults->name,
     '#maxlength' => 255,
-    '#weight' => -10,
     '#required' => TRUE,
   );
 
-  // Generate list of conditional fields.
-  $conditional_components = array();
-  foreach ($node->webform['components'] as $cid => $test_component) {
-    if (webform_component_feature($test_component['type'], 'conditional')) {
-      $conditional_components[$cid] = $test_component;
-    }
-  }
-  if (empty($conditional_components)) {
-    drupal_set_message(t('No conditional components found.  You need to add some conditional components to your webform before you can configure conditional confirmation messages.'), 'error');
-    return $form;
-  }
-
-
-  // Conditional rule.
-  $form['conditional'] = array(
-    '#weight' => 0,
-    '#type' => 'fieldset',
-    '#title' => t('Conditional rule'),
-    '#collapsible' => TRUE,
-    '#collapsed' => FALSE,
-    '#description' => t('Create a rule to control when this confirmation message is used.'),
-  );
-  $form['conditional']['conditional_component'] = array(
-    '#type' => 'select',
-    '#title' => t('Component'),
-    '#options' => webform_component_list($node, $conditional_components, FALSE, TRUE),
-    '#description' => t('Select a component to decide when to use these confirmation message settings.'),
-    '#default_value' => $defaults->conditional_component,
-    '#required' => TRUE,
-  );
-  $form['conditional']['conditional_operator'] = array(
-    '#type' => 'select',
-    '#title' => t('Operator'),
-    '#options' => array(
-      '=' => t('Is one of'),
-      '!=' => t('Is not one of')
-    ),
-    '#description' => t('Determines whether the list below is inclusive or exclusive.'),
-    '#default_value' => $defaults->conditional_operator,
-    '#required' => TRUE,
-  );
-  $form['conditional']['conditional_values'] = array(
-    '#type' => 'textarea',
-    '#title' => t('Values'),
-    '#description' => t('List values, one per line, that will trigger this action.'),
-    '#default_value' => $defaults->conditional_values,
-    '#required' => TRUE,
-  );
-  $form['conditional']['conditional_weight'] = array(
+  $form['conditional_weight'] = array(
     '#type' => 'weight',
     '#title' => t('Weight'),
-    '#description' => t('The order in which rules are to be checked. Lighter items will be processed first and the first matching rule will be used.'),
+    '#description' => t('The order in which conditionals are to be checked. Lighter items will be processed first and the first matching rule will be used.'),
     '#default_value' => $defaults->conditional_weight,
     '#required' => TRUE,
     '#delta' => 20,
   );
 
+  // Generate list of conditional fields.
+  $conditional_components = _webform_conditional_confirmation_get_conditional_components($node);
+  if (empty($conditional_components)) {
+    drupal_set_message(t('No conditional components found.  You need to add some conditional components to your webform before you can configure conditional confirmation messages.'), 'error');
+    return $form;
+  }
+
+  // Conditional rule.
+  $form['conditionals'] = array(
+    '#prefix' => '<div id="conditional-confirmation-conditionals">',
+    '#suffix' => '</div>',
+    '#type' => 'fieldset',
+    '#title' => t('Conditional rules'),
+    '#collapsible' => FALSE,
+    '#description' => t('Create a series of rules to control when this confirmation message is used.'),
+  );
+
+  // Grab the operators first, save generating this list for each conditional.
+  $operators = _webform_conditional_confirmation_conditional_operators_options();
+  for ($i = 0; $i <= $form_state['conditionals']; $i++) {
+    $form['conditionals'][] = _webform_conditional_confirmation_conditional_fieldset($i, $node, $conditional_components, $operators, $defaults);
+  }
+
+  $form['conditionals']['add_new'] = array(
+    '#type' => 'submit',
+    '#value' => t('Add another'),
+    '#submit' => array('_webform_conditional_confirmation_edit_confirmation_form_add_conditional'),
+    '#ajax' => array(
+      'callback' => '_webform_conditional_confirmation_edit_confirmation_form_add_conditional_callback',
+      'wrapper'  => 'conditional-confirmation-conditionals',
+    ),
+  );
 
   // Confirmation message settings.
   $form['message_settings'] = array(
@@ -226,7 +263,6 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
     '#title' => t('Confirmation message settings'),
     '#collapsible' => TRUE,
     '#collapsed' => FALSE,
-    '#weight' => 1,
   );
 
   $form['message_settings']['confirmation'] = array(
@@ -240,12 +276,12 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
   );
 
   // Redirection settings.
-  if (strpos($defaults->redirect_url, '<') === 0) {
-    $redirect = trim($defaults->redirect_url, '<>');
+  if (strpos($defaults->config['redirect_url'], '<') === 0) {
+    $redirect = trim($defaults->config['redirect_url'], '<>');
     // Redirection is set to front page.
     if ($redirect == 'front') {
       $redirect = 'url';
-      $redirect_url = $defaults->redirect_url;
+      $redirect_url = $defaults->config['redirect_url'];
     }
     else {
       $redirect_url = '';
@@ -253,7 +289,7 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
   }
   else {
     $redirect = 'url';
-    $redirect_url = $defaults->redirect_url;
+    $redirect_url = $defaults->config['redirect_url'];
   }
 
   $form['message_settings']['redirection'] = array(
@@ -262,7 +298,8 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
     '#theme' => 'webform_advanced_redirection_form',
     '#description' => t('Choose where to redirect the user upon successful submission.') . ' ' . t('The <em>Custom URL</em> option supports Webform token replacements.') . theme('webform_token_help', array('groups' => array('basic', 'node', 'special', 'submission'))),
   );
-  $form['message_settings']['redirection']['redirect']= array(
+
+  $form['message_settings']['redirection']['redirect'] = array(
     '#type' => 'radios',
     '#default_value' => $redirect,
     '#options' => array(
@@ -271,6 +308,7 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
       'none' => t('No redirect (reload current page)'),
     ),
   );
+
   $form['message_settings']['redirection']['redirect_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Redirect URL'),
@@ -282,7 +320,6 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save confirmation message'),
-    '#weight' => 300,
   );
 
   $form['#submit'][] = 'webform_conditional_confirmation_edit_confirmation_form_submit';
@@ -291,9 +328,72 @@ function webform_conditional_confirmation_edit_confirmation_form($form, &$form_s
 }
 
 /**
+ * Build a conditional fieldset.
+ *
+ * @param int $n
+ *   Fieldset id.
+ * @param object $node
+ *   Webform node object.
+ * @param array $conditional_components
+ *   Webform conditional component array for node.
+ * @param array $conditional_operators
+ *   WCC conditional operators options array.
+ * @param object $wcc
+ *   Webform conditional confirmation object.
+ *
+ * @return array
+ *   Form API array.
+ */
+function _webform_conditional_confirmation_conditional_fieldset($n, $node, $conditional_components, $conditional_operators, $wcc = NULL) {
+  $defaults = array();
+  if ($wcc) {
+    $defaults = $wcc->conditionals;
+  }
+
+  $fieldset = array(
+    '#type' => 'fieldset',
+    '#title' => t('Conditional rule') . ' ' . ($n + 1),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#description' => t('Create a rule to control when this confirmation message is used.'),
+  );
+
+  $fieldset['conditional_component_' . $n] = array(
+    '#type' => 'select',
+    '#title' => t('Component'),
+    '#options' => webform_component_list($node, $conditional_components, FALSE, TRUE),
+    '#description' => t('Select a component to decide when to use these confirmation message settings.'),
+    '#default_value' => isset($defaults[$n]) ? $defaults[$n]['component'] : FALSE,
+  );
+
+  $fieldset['conditional_operator_' . $n] = array(
+    '#type' => 'select',
+    '#title' => t('Operator'),
+    '#options' => $conditional_operators,
+    '#description' => t('Determines whether the list below is inclusive or exclusive.'),
+    '#default_value' => isset($defaults[$n]) ? $defaults[$n]['operator'] : FALSE,
+  );
+
+  $fieldset['conditional_values_' . $n] = array(
+    '#type' => 'textarea',
+    '#title' => t('Values'),
+    '#description' => t('List values, one per line, that will trigger this action.'),
+    '#default_value' => isset($defaults[$n]) ? $defaults[$n]['values'] : '',
+  );
+
+  drupal_alter('wcc_conditional_fieldset', $fieldset, $node, $conditional_components, $wcc);
+
+  return $fieldset;
+}
+
+/**
  * Validate handler; check the redirection settings.
  */
 function webform_conditional_confirmation_edit_confirmation_form_validate($form, &$form_state) {
+  // Check that at least one conditional is set:
+  if ($form_state['conditionals'] == 0 && $form_state['values']['conditional_values_0'] === '') {
+    form_error($form['conditionals'][0]['conditional_values_0'], t('At least one conditional must be set.'));
+  }
   // Ensure the entered redirect URL is valid.
   if ($form_state['values']['redirect'] == 'url') {
     $redirect_url = trim($form_state['values']['redirect_url']);
@@ -316,20 +416,70 @@ function webform_conditional_confirmation_edit_confirmation_form_validate($form,
 }
 
 /**
+ * Add conditional to the form.
+ *
+ * @param array $form
+ *   Form API array.
+ * @param array $form_state
+ *   Form state.
+ */
+function _webform_conditional_confirmation_edit_confirmation_form_add_conditional($form, &$form_state) {
+  $n = $form_state['conditionals'];
+  if ($form_state['values']['conditional_values_' . $n] === '') {
+    form_error($form['conditionals'][$n]['conditional_values_' . $n], t('Check the last condition before adding a new one.'));
+    return;
+  }
+
+  $form_state['conditionals']++;
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Add conditional AJAX callback.
+ *
+ * @param array $form
+ *   Form API array.
+ * @param array $form_state
+ *   Form state.
+ */
+function _webform_conditional_confirmation_edit_confirmation_form_add_conditional_callback($form, &$form_state) {
+  return $form['conditionals'];
+}
+
+/**
  * Submit handler; save the new or updated confirmation message to the database.
  */
 function webform_conditional_confirmation_edit_confirmation_form_submit($form, &$form_state) {
-  $message = new stdClass;
+  $conditionals = array();
+  $n = 0;
+  while (isset($form_state['values']['conditional_component_' . $n])) {
+    if ($form_state['values']['conditional_values_' . $n] !== '') {
+      $conditional = array();
+      $conditional['component'] = $form_state['values']['conditional_component_' . $n];
+      $conditional['operator'] = $form_state['values']['conditional_operator_' . $n];
+      $conditional['values'] = $form_state['values']['conditional_values_' . $n];
+      $conditionals[] = $conditional;
+    }
+    $n++;
+  }
+
+  $message = new stdClass();
   $message->nid = $form_state['values']['nid'];
   $message->msgid = $form_state['values']['msgid'];
   $message->name = $form_state['values']['name'];
-  $message->conditional_component = $form_state['values']['conditional_component'];
-  $message->conditional_operator = $form_state['values']['conditional_operator'];
-  $message->conditional_values = $form_state['values']['conditional_values'];
+
+  $message->conditionals = $conditionals;
   $message->conditional_weight = $form_state['values']['conditional_weight'];
+
   $message->confirmation = $form_state['values']['confirmation']['value'];
   $message->confirmation_format = $form_state['values']['confirmation']['format'];
-  $message->redirect_url = $form_state['values']['redirect_url'];
+
+  $message->config = array(
+    'redirect_url' => $form_state['values']['redirect_url'],
+  );
+
+  drupal_alter('wcc_conditional_submit', $message, $form, $form_state);
+
   $msgid = webform_conditional_confirmation_message_save($message);
   if ($msgid) {
     drupal_set_message(t('Configuration saved.'));
@@ -337,6 +487,7 @@ function webform_conditional_confirmation_edit_confirmation_form_submit($form, &
   else {
     drupal_set_message(t('There was a problem saving your configuration.', 'error'));
   }
+
   $form_state['redirect'] = 'node/' . $message->nid . '/webform/confirmation';
 }
 
