@@ -216,6 +216,12 @@ function webform_conditional_confirmation_get_message(&$node, $submission) {
 
   // No conditional messages configured, return.
   if (empty($messages)) {
+    if ($node->webform['redirect_url'] == '<none>') {
+      drupal_goto($node->webform['redirect_url'] = "node/{$node->nid}");
+    }
+    if (!isset($node->webform_conditional_confirmation) && ($node->webform['redirect_url'] != '<confirmation>')){
+      drupal_goto($node->webform['redirect_url']);
+    }
     return;
   }
 
@@ -299,6 +305,8 @@ function webform_conditional_confirmation_form_webform_client_form_alter(&$form,
  * Submit handler; Load our conditional confirmation messages if required.
  */
 function webform_conditional_confirmation_webform_client_form_submit($form, &$form_state) {
+  global $user;
+
   $node = $form['#node'];
   $sid = $form_state['values']['details']['sid'];
   $is_draft = !empty($form_state['save_draft']);
@@ -337,6 +345,16 @@ function webform_conditional_confirmation_webform_client_form_submit($form, &$fo
   }
   elseif ($redirect_url == '<none>') {
     $redirect = NULL;
+  }
+  elseif ($redirect_url == '<confirmation>') {
+    // No confirmation message needed because it will be shown on the
+    // confirmation page.
+    $message = FALSE;
+    $query = array('sid' => $sid);
+    if ((int) $user-> uid === 0) {
+      $query['token'] = webform_get_submission_access_token($submission);
+    }
+    $redirect = array('node/'. $node->nid . '/done', array('query' => $query));
   }
   elseif (valid_url($redirect_url, TRUE)) {
     $redirect = $redirect_url;
